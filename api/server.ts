@@ -14,7 +14,7 @@ async function startServer() {
     await initDb();
 
     const app = express();
-    const PORT = 3002;
+    const PORT = 3000;
 
     app.use(cors());
     app.use(express.json());
@@ -39,6 +39,15 @@ async function startServer() {
     app.listen(PORT, "0.0.0.0", () => {
         console.log(`Server running on http://localhost:${PORT}`);
     });
+
+    // Global Error Handler
+    app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+        console.error("Unhandled Error:", err);
+        res.status(500).json({ error: "Internal Server Error", details: process.env.NODE_ENV === 'development' ? err.message : undefined });
+    });
 }
 
-startServer();
+startServer().catch(err => {
+    console.error("Failed to start server:", err);
+    process.exit(1);
+});
