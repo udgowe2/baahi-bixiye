@@ -1,0 +1,18 @@
+{
+    "name": "baahi-bixiye-backend",
+    "version": "1.0.0",
+    "type": "module",
+    "scripts": {
+        "start": "NODE_ENV=production tsx api/server.ts"
+    },
+    "dependencies": {
+        "@google/genai": "^1.29.0",
+        "axios": "^1.13.6",
+        "cheerio": "^1.2.0",
+        "cors": "^2.8.5",
+        "dotenv": "^17.2.3",
+        "express": "^4.21.2",
+        "mysql2": "^3.19.0",
+        "tsx": "^4.21.0"
+    }
+}

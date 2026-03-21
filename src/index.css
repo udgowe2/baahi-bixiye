@@ -1,0 +1,151 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Georgia", serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+@layer base {
+  @media print {
+    body {
+      background: white !important;
+      color: black !important;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    .print-hidden {
+      display: none !important;
+    }
+
+    .print-container {
+      width: 100% !important;
+      height: 95vh !important;
+      max-height: 95vh !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      display: flex !important;
+      flex-direction: column !important;
+      overflow: hidden !important;
+    }
+
+    @page {
+      size: A4 landscape;
+      margin: 8mm;
+    }
+
+    /* Force page breaks for days if they are too long */
+    .day-section {
+      page-break-inside: avoid;
+      break-inside: avoid;
+      margin-bottom: 20px;
+    }
+  }
+
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: #e5e7eb;
+    border-radius: 10px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: #d1d5db;
+  }
+
+  /* ===== DARK MODE ===== */
+  html.dark {
+    color-scheme: dark;
+  }
+
+  html.dark body {
+    background-color: #0f0f13;
+    color: #e4e4f0;
+  }
+
+  /* Page background */
+  html.dark .min-h-screen {
+    background-color: #0f0f13 !important;
+  }
+
+  /* White cards → dark surface */
+  html.dark .bg-white {
+    background-color: #1c1c27 !important;
+    border-color: #2e2e3f !important;
+  }
+
+  html.dark .bg-\[\#FAFAFA\] {
+    background-color: #0f0f13 !important;
+  }
+
+  /* Text */
+  html.dark .text-gray-900 { color: #f1f1f8 !important; }
+  html.dark .text-gray-800 { color: #e0e0ee !important; }
+  html.dark .text-gray-700 { color: #c8c8de !important; }
+  html.dark .text-gray-600 { color: #a0a0b8 !important; }
+  html.dark .text-gray-500 { color: #808098 !important; }
+  html.dark .text-gray-400 { color: #606080 !important; }
+
+  /* Border */
+  html.dark .border-gray-100 { border-color: #2a2a3a !important; }
+  html.dark .border-gray-200 { border-color: #33334a !important; }
+
+  /* Header */
+  html.dark header {
+    background-color: rgba(28, 28, 39, 0.85) !important;
+    border-bottom-color: #2e2e3e !important;
+  }
+
+  /* Nav pills */
+  html.dark .bg-gray-100 {
+    background-color: #252535 !important;
+  }
+
+  /* Gray backgrounds */
+  html.dark .bg-gray-50 { background-color: #18182a !important; }
+  html.dark .bg-gray-100 { background-color: #1e1e2e !important; }
+
+  /* Shadows */
+  html.dark .shadow-sm,
+  html.dark .shadow-md { box-shadow: 0 2px 12px rgba(0,0,0,0.4) !important; }
+
+  /* Input fields */
+  html.dark input,
+  html.dark textarea {
+    background-color: #1c1c27 !important;
+    border-color: #3a3a52 !important;
+    color: #e4e4f0 !important;
+  }
+
+  html.dark input::placeholder,
+  html.dark textarea::placeholder {
+    color: #555570 !important;
+  }
+
+  /* Mobile bottom nav */
+  html.dark .bg-white\/90 {
+    background-color: rgba(28, 28, 39, 0.95) !important;
+  }
+
+  html.dark .border-gray-200 {
+    border-color: #2e2e3f !important;
+  }
+
+  /* Recipe cards (they have a slight rotation and white bg) */
+  html.dark .bg-white.shadow-md {
+    background-color: #1c1c27 !important;
+    border-color: #2e2e3f !important;
+  }
+
+  /* Footer */
+  html.dark footer {
+    border-top-color: #2a2a3a !important;
+  }
+}
