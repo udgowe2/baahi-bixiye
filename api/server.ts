@@ -19,6 +19,11 @@ async function startServer() {
     app.use(cors());
     app.use(express.json());
 
+    // Neuer Status-Endpunkt für das Synology-NAS
+    app.get("/api/status", (req, res) => {
+        res.json({ status: "online", version: "1.0.1", server: "Synology-NAS" });
+    });
+
     app.use("/api", apiRouter);
     app.use(express.static(path.join(rootDir, "public")));
 
