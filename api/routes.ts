@@ -335,12 +335,10 @@ Rules:
         const recipeData = JSON.parse(aiResponse.text || "{}");
         recipeData.id = `ai-${Math.random().toString(36).substring(2, 11)}`;
         
-        // Dynamically assign an image from Unsplash based on the AI's search term
-        if (recipeData.englishSearchTerm) {
-            const query = encodeURIComponent(recipeData.englishSearchTerm);
-            recipeData.image = `https://source.unsplash.com/800x600/?${query},food`;
-        } else if (!recipeData.image || !recipeData.image.startsWith("http")) {
-             recipeData.image = "https://images.unsplash.com/photo-1495521821757-a1efb6729352?auto=format&fit=crop&q=80&w=800";
+        // User requested to upload images manually, so we don't automatically assign an Unsplash image anymore.
+        // We will default to a local placeholder if needed, or leave it empty.
+        if (!recipeData.image || !recipeData.image.startsWith("http")) {
+             recipeData.image = null; // Let the frontend handle the missing image state
         }
 
         console.log("[API Generate] Sending generated recipe back to frontend.");

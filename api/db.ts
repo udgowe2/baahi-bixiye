@@ -1,34 +1,34 @@
 import mysql from "mysql2/promise";
 
 const dbConfig = {
-    host: process.env.DB_HOST || "127.0.0.1",
-    port: parseInt(process.env.DB_PORT || "3447"),
-    user: "root",
-    password: "Welcome25$",
-    database: "Baahi",
-    waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 0
+  host: process.env.DB_HOST || "127.0.0.1",
+  port: parseInt(process.env.DB_PORT || "3447"),
+  user: "root",
+  password: "Welcome25$",
+  database: "Baahi",
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0
 };
 
 export let pool: mysql.Pool;
 
 export async function initDb() {
-    try {
-        // First connect without database to create it if it doesn't exist
-        const connection = await mysql.createConnection({
-            host: dbConfig.host,
-            port: dbConfig.port,
-            user: dbConfig.user,
-            password: dbConfig.password
-        });
-        await connection.query(`CREATE DATABASE IF NOT EXISTS \`${dbConfig.database}\``);
-        await connection.end();
+  try {
+    // First connect without database to create it if it doesn't exist
+    const connection = await mysql.createConnection({
+      host: dbConfig.host,
+      port: dbConfig.port,
+      user: dbConfig.user,
+      password: dbConfig.password
+    });
+    await connection.query(`CREATE DATABASE IF NOT EXISTS \`${dbConfig.database}\``);
+    await connection.end();
 
-        // Now connect with database
-        pool = mysql.createPool(dbConfig);
+    // Now connect with database
+    pool = mysql.createPool(dbConfig);
 
-        await pool.query(`
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS recipes (
         id VARCHAR(255) PRIMARY KEY,
         title VARCHAR(255) NOT NULL,
@@ -44,7 +44,7 @@ export async function initDb() {
       )
     `);
 
-        await pool.query(`
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS planner (
         id VARCHAR(255) PRIMARY KEY,
         dayIndex INT NOT NULL, -- 0 (Mon) to 6 (Sun)
@@ -54,7 +54,7 @@ export async function initDb() {
       )
     `);
 
-        await pool.query(`
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS shopping_list (
         id VARCHAR(255) PRIMARY KEY,
         name VARCHAR(255) NOT NULL,
@@ -63,7 +63,7 @@ export async function initDb() {
       )
     `);
 
-        await pool.query(`
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS daily_tasks (
         id VARCHAR(255) PRIMARY KEY,
         dateStr VARCHAR(10) NOT NULL,
@@ -73,8 +73,8 @@ export async function initDb() {
       )
     `);
 
-        console.log("MySQL Database initialized successfully");
-    } catch (error) {
-        console.error("Failed to initialize MySQL Database:", error);
-    }
+    console.log("MySQL Database initialized successfully");
+  } catch (error) {
+    console.error("Failed to initialize MySQL Database:", error);
+  }
 }
