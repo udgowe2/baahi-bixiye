@@ -3,7 +3,7 @@ import axios from "axios";
 import * as cheerio from "cheerio";
 
 const url = "http://xawaash.com/?p=471";
-const ai = new GoogleGenAI({ apiKey: "AIzaSyCbA172g2YxLpkWkG6XJAss7SwECF0ZWj0" });
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 
 async function test() {
     console.log(`[Test] Fetching URL: ${url}`);

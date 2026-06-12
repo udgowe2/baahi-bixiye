@@ -1,14 +1,12 @@
 import { Router } from "express";
 import { pool } from "./db.js";
 import { GoogleGenAI, Type, HarmCategory, HarmBlockThreshold } from "@google/genai";
-import axios from "axios";
-import * as cheerio from "cheerio";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
 
-// Ensure uploads directory exists
-const uploadDir = path.join(process.cwd(), "public", "uploads");
+// Uploads live outside the image in Docker (volume via UPLOAD_DIR)
+export const uploadDir = process.env.UPLOAD_DIR || path.join(process.cwd(), "public", "uploads");
 if (!fs.existsSync(uploadDir)) {
     fs.mkdirSync(uploadDir, { recursive: true });
 }
@@ -23,11 +21,20 @@ const storage = multer.diskStorage({
     }
 })
 
-const upload = multer({ storage: storage });
+const upload = multer({
+    storage: storage,
+    limits: { fileSize: 10 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+        cb(null, file.mimetype.startsWith("image/"));
+    }
+});
 
 export const apiRouter = Router();
 
-const ai = new GoogleGenAI({ apiKey: "AIzaSyCbA172g2YxLpkWkG6XJAss7SwECF0ZWj0" });
+if (!process.env.GEMINI_API_KEY) {
+    console.warn("GEMINI_API_KEY ist nicht gesetzt – der Rezept-Generator wird nicht funktionieren.");
+}
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 
 // Get all recipes
 apiRouter.get("/recipes", async (req, res) => {
@@ -81,7 +88,16 @@ apiRouter.delete("/recipes/:id", async (req, res) => {
 // Get planner
 apiRouter.get("/planner", async (req, res) => {
     try {
-        const [plannerRows]: any = await pool.query("SELECT * FROM planner ORDER BY dayIndex ASC");
+        const { startDate, endDate } = req.query;
+        let query = "SELECT * FROM planner ORDER BY dayIndex ASC";
+        let params: any[] = [];
+        
+        if (startDate && endDate) {
+            query = "SELECT * FROM planner WHERE dateStr BETWEEN ? AND ? ORDER BY dayIndex ASC";
+            params = [startDate, endDate];
+        }
+        
+        const [plannerRows]: any = await pool.query(query, params);
         const [recipeRows]: any = await pool.query("SELECT * FROM recipes");
 
         const recipeMap = new Map(recipeRows.map((r: any) => [r.id, {
@@ -106,12 +122,12 @@ apiRouter.get("/planner", async (req, res) => {
 // Update planner slot
 apiRouter.post("/planner", async (req, res) => {
     try {
-        const { dayIndex, mealType, recipeIds, helperName } = req.body;
-        const id = `day-${dayIndex}-${mealType}`;
+        const { dayIndex, dateStr, mealType, recipeIds, helperName } = req.body;
+        const id = dateStr ? `${dateStr}-${mealType}` : `day-${dayIndex}-${mealType}`;
         await pool.query(`
-      REPLACE INTO planner (id, dayIndex, mealType, recipeIds, helperName)
-      VALUES (?, ?, ?, ?, ?)
-    `, [id, dayIndex, mealType, JSON.stringify(recipeIds), helperName]);
+      REPLACE INTO planner (id, dayIndex, dateStr, mealType, recipeIds, helperName)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `, [id, dayIndex, dateStr || null, mealType, JSON.stringify(recipeIds), helperName]);
         res.json({ success: true });
     } catch (error) {
         res.status(500).json({ error: "Database error" });
@@ -348,14 +364,4 @@ Rules:
         console.error("Generation error:", error);
         res.status(500).json({ error: "Failed to generate recipe: " + error.message });
     }
-});
-
-// Image Upload Endpoint
-apiRouter.post("/upload-image", upload.single("image"), (req, res) => {
-    if (!req.file) {
-        return res.status(400).json({ error: "No image file provided" });
-    }
-    // Return relative url accessible from public folder
-    const imageUrl = `/uploads/${req.file.filename}`;
-    res.json({ url: imageUrl });
 });

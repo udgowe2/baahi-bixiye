@@ -4,6 +4,8 @@ import { motion } from "motion/react";
 import { User, Clock, ChefHat, ArrowRight, ShoppingBag, ListTodo, CheckCircle2 } from "lucide-react";
 import { getImageUrl } from "../utils/imageUrl";
 
+import { getTodayDateString } from "../utils/date";
+
 interface OverviewProps {
   planner: PlannerSlot[];
   recipes: Recipe[];
@@ -23,9 +25,10 @@ export const Overview: React.FC<OverviewProps> = ({
 }) => {
   const todayIndex = (new Date().getDay() + 6) % 7;
   const todayName = DAYS[todayIndex];
+  const todayStr = getTodayDateString();
 
   const todayMeals = MEAL_TYPES.map(mealType => {
-    const slot = Array.isArray(planner) ? planner.find(p => p.dayIndex === todayIndex && p.mealType === mealType.id) : null;
+    const slot = Array.isArray(planner) ? planner.find(p => (p.dateStr === todayStr || (!p.dateStr && p.dayIndex === todayIndex)) && p.mealType === mealType.id) : null;
     const mealRecipes = slot?.recipeIds?.map(id => recipes.find(r => r.id === id)).filter(Boolean) as Recipe[] || [];
     return { ...mealType, recipes: mealRecipes, helper: slot?.helperName };
   });

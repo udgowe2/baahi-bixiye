@@ -1,0 +1,15 @@
+node_modules
+dist
+.git
+.env*
+!.env.example
+public/uploads
+*.zip
+*.log
+.DS_Store
+@eaDir
+test-ai.ts
+test-gemini.ts
+migratePlanner.ts
+DEPLOY.md
+README.md

@@ -1,15 +1,11 @@
 node_modules/
-<<<<<<< HEAD
-.DS_Store
-backend.log
-@eaDir/
 dist/
-=======
 build/
-dist/
 coverage/
 .DS_Store
 *.log
+@eaDir/
 .env*
 !.env.example
->>>>>>> 1ac8f2a4da03c953af25331cef755fa01d4f4077
+public/uploads/
+*.zip

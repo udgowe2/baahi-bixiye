@@ -36,10 +36,8 @@ export const RecipeForm: React.FC<RecipeFormProps> = ({ recipe, onSave, onClose 
     const formData = new FormData();
     formData.append("image", file);
 
-    const API_BASE = `${window.location.protocol}//${window.location.hostname}:3001`;
-
     try {
-      const res = await fetch(`${API_BASE}/api/upload-image`, {
+      const res = await fetch(`/api/upload-image`, {
         method: "POST",
         body: formData,
       });

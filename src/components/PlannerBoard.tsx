@@ -3,6 +3,8 @@ import { Recipe, PlannerSlot, DAYS, MEAL_TYPES, MealType } from "../types";
 import { User, Star, Trash2, Plus, X } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { getImageUrl } from "../utils/imageUrl";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+import { formatUIDate, formatDateStr, addDays } from "../utils/date";
 
 interface MealSlotProps {
   dayIndex: number;
@@ -11,9 +13,10 @@ interface MealSlotProps {
   onAddRequest: (dayIndex: number, mealType: MealType) => void;
   onRemoveRecipe: (dayIndex: number, mealType: MealType, recipeId: string) => void;
   onUpdateHelper: (dayIndex: number, mealType: MealType, helperName: string) => void;
+  onClickRecipe?: (recipe: Recipe) => void;
 }
 
-const MealSlot: React.FC<MealSlotProps> = ({ dayIndex, mealType, slot, onAddRequest, onRemoveRecipe, onUpdateHelper }) => {
+const MealSlot: React.FC<MealSlotProps> = ({ dayIndex, mealType, slot, onAddRequest, onRemoveRecipe, onUpdateHelper, onClickRecipe }) => {
   const mealConfig = MEAL_TYPES.find(m => m.id === mealType);
 
   return (
@@ -41,17 +44,22 @@ const MealSlot: React.FC<MealSlotProps> = ({ dayIndex, mealType, slot, onAddRequ
                 exit={{ opacity: 0, scale: 0.9 }}
                 className="group relative flex items-center gap-2 bg-white p-2 rounded-lg shadow-sm border border-gray-100"
               >
-                <div className="w-8 h-8 rounded bg-gray-100 overflow-hidden flex-shrink-0">
-                  {recipe.image ? (
-                    <img src={getImageUrl(recipe.image)} alt={recipe.title} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-[8px] text-gray-300">N/A</div>
-                  )}
+                <div
+                  className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer hover:text-indigo-600 transition-colors"
+                  onClick={() => onClickRecipe?.(recipe)}
+                >
+                  <div className="w-8 h-8 rounded bg-gray-100 overflow-hidden flex-shrink-0">
+                    {recipe.image ? (
+                      <img src={getImageUrl(recipe.image)} alt={recipe.title} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-[8px] text-gray-300">N/A</div>
+                    )}
+                  </div>
+                  <span className="text-xs font-bold text-gray-700 truncate flex-1 group-hover:text-indigo-600">{recipe.title}</span>
                 </div>
-                <span className="text-xs font-bold text-gray-700 truncate flex-1">{recipe.title}</span>
                 <button
                   onClick={() => onRemoveRecipe(dayIndex, mealType, recipe.id)}
-                  className="opacity-100 md:opacity-0 md:group-hover:opacity-100 p-1 text-red-500 md:text-gray-300 md:hover:text-red-500 transition-all"
+                  className="opacity-100 md:opacity-0 md:group-hover:opacity-100 p-1 text-red-500 md:text-gray-300 md:hover:text-red-500 transition-all flex-shrink-0"
                 >
                   <X size={12} />
                 </button>
@@ -110,36 +118,59 @@ const MealSlot: React.FC<MealSlotProps> = ({ dayIndex, mealType, slot, onAddRequ
 
 interface PlannerBoardProps {
   planner: PlannerSlot[];
+  currentWeekStart: Date;
+  onWeekChange: (date: Date) => void;
   onAddRequest: (dayIndex: number, mealType: MealType) => void;
   onRemoveRecipe: (dayIndex: number, mealType: MealType, recipeId: string) => void;
   onUpdateHelper: (dayIndex: number, mealType: MealType, helperName: string) => void;
+  onClickRecipe?: (recipe: Recipe) => void;
 }
 
-export const PlannerBoard: React.FC<PlannerBoardProps> = ({ planner, onAddRequest, onRemoveRecipe, onUpdateHelper }) => {
+export const PlannerBoard: React.FC<PlannerBoardProps> = ({ planner, currentWeekStart, onWeekChange, onAddRequest, onRemoveRecipe, onUpdateHelper, onClickRecipe }) => {
   return (
     <div className="flex flex-col gap-8">
-      {DAYS.map((day, dayIndex) => (
+      {/* Week Navigation Header */}
+      <div className="flex items-center justify-between bg-white p-3 rounded-2xl shadow-sm border border-gray-100">
+        <button onClick={() => onWeekChange(addDays(currentWeekStart, -7))} className="p-2 hover:bg-gray-100 rounded-full transition-colors flex items-center gap-2 text-sm font-bold text-gray-600">
+          <ChevronLeft size={20} /> Vorherige
+        </button>
+        <div className="font-bold text-gray-800 tracking-wide text-center flex-1">
+          Woche vom {formatUIDate(currentWeekStart, "").replace(", ", "")}
+        </div>
+        <button onClick={() => onWeekChange(addDays(currentWeekStart, 7))} className="p-2 hover:bg-gray-100 rounded-full transition-colors flex items-center gap-2 text-sm font-bold text-gray-600">
+          Nächste <ChevronRight size={20} />
+        </button>
+      </div>
+      {DAYS.map((day, dayIndex) => {
+        const currentDate = addDays(currentWeekStart, dayIndex);
+        const dateHeader = formatUIDate(currentDate, day);
+        return (
         <div key={day} className="flex flex-col gap-4">
           <div className="flex items-center gap-4">
-            <h3 className="font-serif italic text-2xl text-gray-800 shrink-0 md:min-w-[140px]">{day}</h3>
+            <h3 className="font-serif italic text-2xl text-gray-800 shrink-0 md:min-w-[200px]">{dateHeader}</h3>
             <div className="h-px bg-gray-100 flex-1" />
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {MEAL_TYPES.map((meal) => (
+            {MEAL_TYPES.map((meal) => {
+              const targetDateStr = formatDateStr(addDays(currentWeekStart, dayIndex));
+              const exactSlot = Array.isArray(planner) ? planner.find(p => p.dateStr === targetDateStr && p.mealType === meal.id) : undefined;
+              const templateSlot = Array.isArray(planner) ? planner.find(p => !p.dateStr && p.dayIndex === dayIndex && p.mealType === meal.id) : undefined;
+              return (
               <MealSlot
                 key={meal.id}
                 dayIndex={dayIndex}
                 mealType={meal.id}
-                slot={Array.isArray(planner) ? planner.find((p) => p.dayIndex === dayIndex && p.mealType === meal.id) : undefined}
+                slot={exactSlot || templateSlot}
                 onAddRequest={onAddRequest}
                 onRemoveRecipe={onRemoveRecipe}
                 onUpdateHelper={onUpdateHelper}
+                onClickRecipe={onClickRecipe}
               />
-            ))}
+            )})}
           </div>
         </div>
-      ))}
+      )})}
     </div>
   );
 };

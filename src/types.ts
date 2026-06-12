@@ -26,6 +26,7 @@ export type MealType = "breakfast" | "lunch" | "dinner" | "snack";
 export interface PlannerSlot {
   id: string;
   dayIndex: number;
+  dateStr?: string; // Add the date string support!
   mealType: MealType;
   recipeIds: string[]; // JSON array in DB
   helperName?: string;

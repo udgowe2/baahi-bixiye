@@ -1,10 +1,12 @@
+import dotenv from "dotenv";
+dotenv.config();
+
 import express from "express";
-import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
 import cors from "cors";
 import { initDb } from "./db.js";
-import { apiRouter } from "./routes.js";
+import { apiRouter, uploadDir } from "./routes.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -14,7 +16,7 @@ async function startServer() {
     await initDb();
 
     const app = express();
-    const PORT = 3000;
+    const PORT = parseInt(process.env.PORT || "3001");
 
     app.use(cors());
     app.use(express.json());
@@ -25,9 +27,12 @@ async function startServer() {
     });
 
     app.use("/api", apiRouter);
+    app.use("/uploads", express.static(uploadDir));
     app.use(express.static(path.join(rootDir, "public")));
 
     if (process.env.NODE_ENV !== "production") {
+        // Vite nur im Dev-Modus laden – im Docker-Image ist es nicht installiert
+        const { createServer: createViteServer } = await import("vite");
         const vite = await createViteServer({
             server: { middlewareMode: true },
             appType: "spa",
@@ -41,14 +46,14 @@ async function startServer() {
         });
     }
 
-    app.listen(PORT, "0.0.0.0", () => {
-        console.log(`Server running on http://localhost:${PORT}`);
-    });
-
     // Global Error Handler
     app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
         console.error("Unhandled Error:", err);
         res.status(500).json({ error: "Internal Server Error", details: process.env.NODE_ENV === 'development' ? err.message : undefined });
+    });
+
+    app.listen(PORT, "0.0.0.0", () => {
+        console.log(`Server running on http://localhost:${PORT}`);
     });
 }
 

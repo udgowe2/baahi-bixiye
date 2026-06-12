@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Recipe, PlannerSlot, DAYS, MealType, ShoppingItem, MEAL_TYPES, DailyTask } from "./types";
-import { getTodayDateString, generateSmartTasks } from "./utils/smartTasks";
+import { getTodayDateString, getMonday, addDays, formatDateStr } from "./utils/date";
+import { generateSmartTasks } from "./utils/smartTasks";
 import { RecipeBank } from "./components/RecipeBank";
 import { PlannerBoard } from "./components/PlannerBoard";
 import { ShoppingList } from "./components/ShoppingList";
@@ -21,6 +22,7 @@ export default function App() {
   const [planner, setPlanner] = useState<PlannerSlot[]>([]);
   const [shoppingItems, setShoppingItems] = useState<ShoppingItem[]>([]);
   const [dailyTasks, setDailyTasks] = useState<DailyTask[]>([]);
+  const [currentWeekStart, setCurrentWeekStart] = useState<Date>(getMonday(new Date()));
   const [isImporting, setIsImporting] = useState(false);
   const [activeRecipe, setActiveRecipe] = useState<Recipe | null>(null);
   const [showPrintView, setShowPrintView] = useState(false);
@@ -30,12 +32,16 @@ export default function App() {
 
   useEffect(() => {
     fetchRecipes();
-    fetchPlanner();
     fetchShoppingItems();
     fetchTasks();
   }, []);
 
-  const API_BASE = `${window.location.protocol}//${window.location.hostname}:3001`;
+  useEffect(() => {
+    fetchPlanner(currentWeekStart);
+  }, [currentWeekStart]);
+
+  // Frontend und API kommen vom selben Server – relative URLs funktionieren überall
+  const API_BASE = "";
 
   const fetchRecipes = async () => {
     try {
@@ -49,9 +55,11 @@ export default function App() {
     }
   };
 
-  const fetchPlanner = async () => {
+  const fetchPlanner = async (weekStart: Date = currentWeekStart) => {
     try {
-      const res = await fetch(`${API_BASE}/api/planner`);
+      const startStr = formatDateStr(weekStart);
+      const endStr = formatDateStr(addDays(weekStart, 6));
+      const res = await fetch(`${API_BASE}/api/planner?startDate=${startStr}&endDate=${endStr}`);
       const data = await res.json();
       if (Array.isArray(data)) {
         setPlanner(data);
@@ -253,33 +261,39 @@ export default function App() {
   };
 
   const handleRemoveRecipeFromPlanner = async (dayIndex: number, mealType: MealType, recipeId: string) => {
-    const slot = planner.find(p => p.dayIndex === dayIndex && p.mealType === mealType);
+    const targetDateStr = formatDateStr(addDays(currentWeekStart, dayIndex));
+    const slot = planner.find(p => p.dateStr === targetDateStr && p.mealType === mealType);
+    
     if (slot) {
       const updatedRecipeIds = slot.recipeIds.filter(id => id !== recipeId);
       await fetch(`${API_BASE}/api/planner`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dayIndex, mealType, recipeIds: updatedRecipeIds, helperName: slot.helperName }),
+        body: JSON.stringify({ dayIndex, dateStr: targetDateStr, mealType, recipeIds: updatedRecipeIds, helperName: slot.helperName }),
       });
-      fetchPlanner();
+      fetchPlanner(currentWeekStart);
     }
   };
 
   const handleUpdateHelper = async (dayIndex: number, mealType: MealType, helperName: string) => {
-    const slot = planner.find(p => p.dayIndex === dayIndex && p.mealType === mealType);
+    const targetDateStr = formatDateStr(addDays(currentWeekStart, dayIndex));
+    const slot = planner.find(p => p.dateStr === targetDateStr && p.mealType === mealType);
+    
     await fetch(`${API_BASE}/api/planner`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ dayIndex, mealType, recipeIds: slot?.recipeIds || [], helperName }),
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dayIndex, dateStr: targetDateStr, mealType, recipeIds: slot?.recipeIds || [], helperName }),
     });
-    fetchPlanner();
+    fetchPlanner(currentWeekStart);
   };
 
   const handleRecipePicked = async (recipe: Recipe) => {
     if (!pickerTarget) return;
 
     const { dayIndex, mealType } = pickerTarget;
-    const slot = planner.find(p => p.dayIndex === dayIndex && p.mealType === mealType);
+    const targetDateStr = formatDateStr(addDays(currentWeekStart, dayIndex));
+    const slot = planner.find(p => p.dateStr === targetDateStr && p.mealType === mealType);
+    
     const currentRecipeIds = slot?.recipeIds || [];
 
     if (!currentRecipeIds.includes(recipe.id)) {
@@ -287,9 +301,9 @@ export default function App() {
       await fetch(`${API_BASE}/api/planner`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dayIndex, mealType, recipeIds: updatedRecipeIds, helperName: slot?.helperName || "" }),
+        body: JSON.stringify({ dayIndex, dateStr: targetDateStr, mealType, recipeIds: updatedRecipeIds, helperName: slot?.helperName || "" }),
       });
-      fetchPlanner();
+      fetchPlanner(currentWeekStart);
     }
 
     setPickerTarget(null);
@@ -427,14 +441,15 @@ export default function App() {
               </div>
 
               <div className="flex flex-col lg:flex-row gap-6 lg:gap-8">
-                {/* Empty Sidebar removed because of PickerModal overlay approach. Using full width. */}
-
                 <div className="flex-1">
                   <PlannerBoard
                     planner={planner}
+                    currentWeekStart={currentWeekStart}
+                    onWeekChange={setCurrentWeekStart}
                     onAddRequest={(dayIndex, mealType) => setPickerTarget({ dayIndex, mealType })}
                     onRemoveRecipe={handleRemoveRecipeFromPlanner}
                     onUpdateHelper={handleUpdateHelper}
+                    onClickRecipe={setActiveRecipe}
                   />
                 </div>
               </div>
