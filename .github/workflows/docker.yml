@@ -38,3 +38,9 @@ jobs:
             ghcr.io/${{ github.repository }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Diagnose bei Fehlschlag (Fehler als Annotation ausgeben)
+        if: failure()
+        run: |
+          docker build --progress=plain . > build.log 2>&1 || true
+          tail -c 2000 build.log | tr '\n' '¶' | xargs -0 printf '::error title=Docker-Build-Log (Ende)::%s\n'
