@@ -2,6 +2,24 @@ import React from "react";
 import { Ingredient, Recipe, PlannerSlot, ShoppingItem } from "../types";
 import { ShoppingCart, CheckCircle2, Circle, ChevronDown, ChevronUp, Plus, Trash2 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
+import { addAmounts } from "../utils/amounts";
+import { formatDateStr, getMonday } from "../utils/date";
+
+// Häkchen an geplanten Zutaten überleben das Neuladen: pro Woche im localStorage
+const CHECKED_KEY_PREFIX = "baahi-checked-";
+const currentWeekKey = () => CHECKED_KEY_PREFIX + formatDateStr(getMonday(new Date()));
+
+function loadCheckedItems(): Set<string> {
+  try {
+    // Alte Wochen aufräumen
+    Object.keys(localStorage)
+      .filter(k => k.startsWith(CHECKED_KEY_PREFIX) && k !== currentWeekKey())
+      .forEach(k => localStorage.removeItem(k));
+    return new Set(JSON.parse(localStorage.getItem(currentWeekKey()) || "[]"));
+  } catch {
+    return new Set();
+  }
+}
 
 interface ShoppingListProps {
   planner: PlannerSlot[];
@@ -20,7 +38,7 @@ export const ShoppingList: React.FC<ShoppingListProps> = ({
   onToggleManualItem,
   onDeleteManualItem
 }) => {
-  const [checkedPlannedItems, setCheckedPlannedItems] = React.useState<Set<string>>(new Set());
+  const [checkedPlannedItems, setCheckedPlannedItems] = React.useState<Set<string>>(loadCheckedItems);
   const [showPantry, setShowPantry] = React.useState(false);
   const [newItemName, setNewItemName] = React.useState("");
   const [newItemAmount, setNewItemAmount] = React.useState("");
@@ -39,14 +57,15 @@ export const ShoppingList: React.FC<ShoppingListProps> = ({
       }
     });
 
-    // Deduplicate and merge amounts
+    // Deduplizieren und Mengen echt addieren ("200 g" + "100 g" = "300 g");
+    // nicht rechenbare Angaben werden wie bisher aneinandergehängt
     const merged = list.reduce((acc, curr) => {
       const key = curr.name.toLowerCase().trim();
       if (!acc[key]) {
         acc[key] = { ...curr };
       } else {
-        // Simple string concatenation for amounts
-        acc[key].amount = `${acc[key].amount}, ${curr.amount}`;
+        const summed = addAmounts(acc[key].amount, curr.amount);
+        acc[key].amount = summed ?? `${acc[key].amount}, ${curr.amount}`;
       }
       return acc;
     }, {} as Record<string, Ingredient>);
@@ -62,6 +81,9 @@ export const ShoppingList: React.FC<ShoppingListProps> = ({
     if (next.has(name)) next.delete(name);
     else next.add(name);
     setCheckedPlannedItems(next);
+    try {
+      localStorage.setItem(currentWeekKey(), JSON.stringify([...next]));
+    } catch { /* z.B. privater Modus – Häkchen gelten dann nur für die Sitzung */ }
   };
 
   const handleAdd = (e: React.FormEvent) => {

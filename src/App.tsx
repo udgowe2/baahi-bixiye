@@ -96,16 +96,28 @@ export default function App() {
     }
   };
 
-  // Keep a ref or use effect dependency to run smart sync when core data is loaded
+  // Läuft erneut, sobald Einkaufsliste oder Aufgaben geladen/geändert wurden.
+  // Terminiert, weil syncSmartTasks nur bei echten Änderungen neu fetcht.
   useEffect(() => {
-     if (planner.length > 0 || recipes.length > 0 || shoppingItems.length > 0) {
-        syncSmartTasks();
-     }
-  }, [planner, recipes, shoppingItems]);
+     syncSmartTasks();
+  }, [shoppingItems, dailyTasks]);
 
   const syncSmartTasks = async () => {
       const today = getTodayDateString();
-      const { tasksToAdd, tasksToRemove } = generateSmartTasks(planner, recipes, shoppingItems, dailyTasks);
+
+      // Die Slots von MORGEN direkt vom Server holen – unabhängig davon,
+      // welche Woche gerade im Planer angezeigt wird (fixt auch den Sonntags-Bug)
+      const tomorrowStr = formatDateStr(addDays(new Date(), 1));
+      let tomorrowSlots: PlannerSlot[] = [];
+      try {
+          const res = await fetch(`${API_BASE}/api/planner?startDate=${tomorrowStr}&endDate=${tomorrowStr}`);
+          const data = await res.json();
+          if (Array.isArray(data)) tomorrowSlots = data;
+      } catch (err) {
+          console.error("Failed to fetch tomorrow's planner:", err);
+      }
+
+      const { tasksToAdd, tasksToRemove } = generateSmartTasks(tomorrowSlots, shoppingItems, dailyTasks);
       
       let didChange = false;
 

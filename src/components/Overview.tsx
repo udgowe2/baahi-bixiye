@@ -161,7 +161,7 @@ export const Overview: React.FC<OverviewProps> = ({
             <p className="text-gray-400 text-xs font-black uppercase tracking-widest mb-1">Einkaufsliste</p>
             <p className="text-3xl font-black text-gray-900">{pendingShopping}</p>
             <p className="text-gray-400 text-sm mt-0.5">
-              {pendingShopping === 1 ? "Artikel ausstehend" : "Artikel ausstehend"}
+              Artikel ausstehend
             </p>
           </div>
           <ArrowRight size={20} className="text-gray-300 group-hover:translate-x-1 group-hover:text-emerald-400 transition-all" />

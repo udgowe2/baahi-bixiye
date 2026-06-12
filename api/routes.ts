@@ -31,6 +31,16 @@ const upload = multer({
 
 export const apiRouter = Router();
 
+// Eine korrupte JSON-Spalte darf nicht den ganzen Endpunkt lahmlegen
+function safeParse<T>(json: unknown, fallback: T): T {
+    try {
+        const parsed = JSON.parse(String(json ?? ""));
+        return (parsed ?? fallback) as T;
+    } catch {
+        return fallback;
+    }
+}
+
 if (!process.env.GEMINI_API_KEY) {
     console.warn("GEMINI_API_KEY ist nicht gesetzt – der Rezept-Generator wird nicht funktionieren.");
 }
@@ -42,8 +52,8 @@ apiRouter.get("/recipes", async (req, res) => {
         const [rows]: any = await pool.query("SELECT * FROM recipes ORDER BY createdAt DESC");
         res.json(rows.map((r: any) => ({
             ...r,
-            ingredients: JSON.parse(r.ingredients || "[]"),
-            tags: JSON.parse(r.tags || "[]")
+            ingredients: safeParse(r.ingredients, []),
+            tags: safeParse(r.tags, [])
         })));
     } catch (error) {
         res.status(500).json({ error: "Database error" });
@@ -102,12 +112,12 @@ apiRouter.get("/planner", async (req, res) => {
 
         const recipeMap = new Map(recipeRows.map((r: any) => [r.id, {
             ...r,
-            ingredients: JSON.parse(r.ingredients || "[]"),
-            tags: JSON.parse(r.tags || "[]")
+            ingredients: safeParse(r.ingredients, []),
+            tags: safeParse(r.tags, [])
         }]));
 
         res.json(plannerRows.map((p: any) => {
-            const recipeIds = JSON.parse(p.recipeIds || "[]");
+            const recipeIds = safeParse<string[]>(p.recipeIds, []);
             return {
                 ...p,
                 recipeIds,

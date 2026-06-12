@@ -1,10 +1,10 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { Recipe, PlannerSlot, DAYS, MEAL_TYPES, MealType } from "../types";
-import { User, Star, Trash2, Plus, X } from "lucide-react";
+import { User, Plus, X, CalendarCheck } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { getImageUrl } from "../utils/imageUrl";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { formatUIDate, formatDateStr, addDays } from "../utils/date";
+import { formatUIDate, formatDateStr, addDays, getMonday } from "../utils/date";
 
 interface MealSlotProps {
   dayIndex: number;
@@ -18,6 +18,19 @@ interface MealSlotProps {
 
 const MealSlot: React.FC<MealSlotProps> = ({ dayIndex, mealType, slot, onAddRequest, onRemoveRecipe, onUpdateHelper, onClickRecipe }) => {
   const mealConfig = MEAL_TYPES.find(m => m.id === mealType);
+
+  // Lokaler Entwurf: gespeichert wird erst beim Verlassen des Feldes,
+  // nicht bei jedem Tastendruck (sonst ein Server-Request pro Buchstabe)
+  const [helperDraft, setHelperDraft] = useState(slot?.helperName || "");
+  useEffect(() => {
+    setHelperDraft(slot?.helperName || "");
+  }, [slot?.helperName]);
+
+  const commitHelper = () => {
+    if (helperDraft !== (slot?.helperName || "")) {
+      onUpdateHelper(dayIndex, mealType, helperDraft);
+    }
+  };
 
   return (
     <div
@@ -98,15 +111,12 @@ const MealSlot: React.FC<MealSlotProps> = ({ dayIndex, mealType, slot, onAddRequ
               <input
                 type="text"
                 placeholder="Helfer..."
-                value={slot.helperName || ""}
-                onChange={(e) => onUpdateHelper(dayIndex, mealType, e.target.value)}
+                value={helperDraft}
+                onChange={(e) => setHelperDraft(e.target.value)}
+                onBlur={commitHelper}
+                onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
                 className="bg-transparent border-none focus:ring-0 p-0 text-[10px] text-gray-600 placeholder:text-gray-200 w-full"
               />
-            </div>
-            <div className="flex gap-0.5 text-gray-100">
-              {[1, 2, 3, 4, 5].map((s) => (
-                <Star key={s} size={10} />
-              ))}
             </div>
           </div>
         )
@@ -127,6 +137,9 @@ interface PlannerBoardProps {
 }
 
 export const PlannerBoard: React.FC<PlannerBoardProps> = ({ planner, currentWeekStart, onWeekChange, onAddRequest, onRemoveRecipe, onUpdateHelper, onClickRecipe }) => {
+  const todayStr = formatDateStr(new Date());
+  const isCurrentWeek = formatDateStr(currentWeekStart) === formatDateStr(getMonday(new Date()));
+
   return (
     <div className="flex flex-col gap-8">
       {/* Week Navigation Header */}
@@ -134,8 +147,16 @@ export const PlannerBoard: React.FC<PlannerBoardProps> = ({ planner, currentWeek
         <button onClick={() => onWeekChange(addDays(currentWeekStart, -7))} className="p-2 hover:bg-gray-100 rounded-full transition-colors flex items-center gap-2 text-sm font-bold text-gray-600">
           <ChevronLeft size={20} /> Vorherige
         </button>
-        <div className="font-bold text-gray-800 tracking-wide text-center flex-1">
-          Woche vom {formatUIDate(currentWeekStart, "").replace(", ", "")}
+        <div className="font-bold text-gray-800 tracking-wide text-center flex-1 flex items-center justify-center gap-3">
+          <span>Woche vom {formatUIDate(currentWeekStart, "").replace(", ", "")}</span>
+          {!isCurrentWeek && (
+            <button
+              onClick={() => onWeekChange(getMonday(new Date()))}
+              className="flex items-center gap-1 text-xs px-3 py-1 bg-indigo-50 text-indigo-600 rounded-full font-bold hover:bg-indigo-100 transition-colors"
+            >
+              <CalendarCheck size={12} /> Heute
+            </button>
+          )}
         </div>
         <button onClick={() => onWeekChange(addDays(currentWeekStart, 7))} className="p-2 hover:bg-gray-100 rounded-full transition-colors flex items-center gap-2 text-sm font-bold text-gray-600">
           Nächste <ChevronRight size={20} />
@@ -144,11 +165,19 @@ export const PlannerBoard: React.FC<PlannerBoardProps> = ({ planner, currentWeek
       {DAYS.map((day, dayIndex) => {
         const currentDate = addDays(currentWeekStart, dayIndex);
         const dateHeader = formatUIDate(currentDate, day);
+        const isToday = formatDateStr(currentDate) === todayStr;
         return (
         <div key={day} className="flex flex-col gap-4">
           <div className="flex items-center gap-4">
-            <h3 className="font-serif italic text-2xl text-gray-800 shrink-0 md:min-w-[200px]">{dateHeader}</h3>
-            <div className="h-px bg-gray-100 flex-1" />
+            <h3 className={`font-serif italic text-2xl shrink-0 md:min-w-[200px] ${isToday ? "text-indigo-600 font-bold" : "text-gray-800"}`}>
+              {dateHeader}
+              {isToday && (
+                <span className="ml-2 align-middle inline-block text-[10px] not-italic font-sans font-black uppercase tracking-widest bg-indigo-600 text-white px-2.5 py-1 rounded-full">
+                  Heute
+                </span>
+              )}
+            </h3>
+            <div className={`h-px flex-1 ${isToday ? "bg-indigo-200" : "bg-gray-100"}`} />
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
