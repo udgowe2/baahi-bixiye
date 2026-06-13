@@ -6,7 +6,7 @@ services:
     ports:
       - "8095:3001"
     environment:
-      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       DB_HOST: 192.168.1.30
       DB_PORT: "3447"
       DB_USER: root

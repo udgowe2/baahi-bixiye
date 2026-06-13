@@ -6,7 +6,7 @@
         "start": "NODE_ENV=production tsx api/server.ts"
     },
     "dependencies": {
-        "@google/genai": "^1.29.0",
+        "@anthropic-ai/sdk": "^0.104.1",
         "axios": "^1.13.6",
         "cheerio": "^1.2.0",
         "cors": "^2.8.5",

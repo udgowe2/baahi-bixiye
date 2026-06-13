@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { pool } from "./db.js";
-import { GoogleGenAI, Type, HarmCategory, HarmBlockThreshold } from "@google/genai";
+import Anthropic from "@anthropic-ai/sdk";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
@@ -41,10 +41,10 @@ function safeParse<T>(json: unknown, fallback: T): T {
     }
 }
 
-if (!process.env.GEMINI_API_KEY) {
-    console.warn("GEMINI_API_KEY ist nicht gesetzt – der Rezept-Generator wird nicht funktionieren.");
+if (!process.env.ANTHROPIC_API_KEY) {
+    console.warn("ANTHROPIC_API_KEY ist nicht gesetzt – der Rezept-Generator wird nicht funktionieren.");
 }
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || "" });
 
 // --- Settings (Vorratsliste, Themen-Tage) ---
 
@@ -325,7 +325,7 @@ apiRouter.post("/generate-recipe", async (req, res) => {
     try {
         console.log(`[API Generate] Generating recipe for prompt: ${prompt}`);
 
-        const geminiPrompt = `
+        const aiPrompt = `
 You are a skilled family cook and nutrition advisor. Create a recipe based on this user request:
 "${prompt}"
 
@@ -352,51 +352,48 @@ Rules:
 `;
 
 
-        const aiResponse = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
-            contents: geminiPrompt,
-            config: {
-                systemInstruction: "You are a multilingual family recipe generator for a Muslim family. STRICT HALAL RULES: Never include alcohol, pork, lard, or any haram ingredients. All recipes must be 100% halal. Always respond with valid JSON matching the exact schema provided. Never wrap in markdown blocks, just raw JSON. IMPORTANT: Detect the language the user wrote in and respond in that same language throughout (title, ingredients, instructions, tags) — except the englishSearchTerm which must always be in English.",
-                safetySettings: [
-                    { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
-                    { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
-                    { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-                    { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE }
-                ],
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.OBJECT,
+        const aiMessage = await anthropic.messages.stream({
+            model: "claude-opus-4-8",
+            max_tokens: 4096,
+            thinking: { type: "adaptive" },
+            system: "You are a multilingual family recipe generator for a Muslim family. STRICT HALAL RULES: Never include alcohol, pork, lard, or any haram ingredients. All recipes must be 100% halal. IMPORTANT: Detect the language the user wrote in and respond in that same language throughout (title, ingredients, instructions, tags) — except the englishSearchTerm which must always be in English.",
+            messages: [{ role: "user", content: aiPrompt }],
+            tools: [{
+                name: "output_recipe",
+                description: "Output the generated recipe as structured data",
+                input_schema: {
+                    type: "object" as const,
                     properties: {
-                        title: { type: Type.STRING },
-                        image: { type: Type.STRING, nullable: true },
-                        prepTime: { type: Type.STRING, nullable: true },
+                        title: { type: "string" },
+                        prepTime: { type: "string" },
                         ingredients: {
-                            type: Type.ARRAY,
+                            type: "array",
                             items: {
-                                type: Type.OBJECT,
+                                type: "object",
                                 properties: {
-                                    name: { type: Type.STRING, nullable: true },
-                                    amount: { type: Type.STRING, nullable: true },
-                                    isPantry: { type: Type.BOOLEAN, nullable: true }
+                                    name: { type: "string" },
+                                    amount: { type: "string" },
+                                    isPantry: { type: "boolean" }
                                 },
                                 required: ["name", "amount", "isPantry"]
-                            },
-                            nullable: true
+                            }
                         },
-                        instructions: { type: Type.STRING, nullable: true },
-                        tags: { type: Type.ARRAY, items: { type: Type.STRING, nullable: true }, nullable: true },
-                        englishSearchTerm: { type: Type.STRING, nullable: true },
-                        mealTime: { type: Type.STRING, nullable: true },
-                        category: { type: Type.STRING, nullable: true }
+                        instructions: { type: "string" },
+                        tags: { type: "array", items: { type: "string" } },
+                        englishSearchTerm: { type: "string" },
+                        mealTime: { type: "string" },
+                        category: { type: "string" }
                     },
                     required: ["title"]
                 }
-            }
-        });
+            }],
+            tool_choice: { type: "tool", name: "output_recipe" }
+        }).finalMessage();
 
-        console.log("[API Generate] Received raw Gemini response.");
+        console.log("[API Generate] Received Claude response.");
 
-        const recipeData = JSON.parse(aiResponse.text || "{}");
+        const toolBlock = aiMessage.content.find(b => b.type === "tool_use");
+        const recipeData: any = (toolBlock as any)?.input || {};
         recipeData.id = `ai-${Math.random().toString(36).substring(2, 11)}`;
         
         // User requested to upload images manually, so we don't automatically assign an Unsplash image anymore.
@@ -421,28 +418,27 @@ const MEAL_LABELS: Record<string, string> = { lunch: "Mittagessen", dinner: "Abe
 
 const HALAL_RULE = "🚫 STRIKTE HALAL-REGELN: Niemals Alkohol, Schweinefleisch, Schmalz oder andere haram Zutaten. Alles Fleisch muss halal sein.";
 
-// Einheitliches Antwort-Schema für ein generiertes Gericht
+// Einheitliches Antwort-Schema für ein generiertes Gericht (JSON Schema für Claude tool_use)
 const recipeProps = {
-    title: { type: Type.STRING },
-    prepTime: { type: Type.STRING, nullable: true },
+    title: { type: "string" as const },
+    prepTime: { type: "string" as const },
     ingredients: {
-        type: Type.ARRAY,
+        type: "array" as const,
         items: {
-            type: Type.OBJECT,
+            type: "object" as const,
             properties: {
-                name: { type: Type.STRING, nullable: true },
-                amount: { type: Type.STRING, nullable: true },
-                isPantry: { type: Type.BOOLEAN, nullable: true }
+                name: { type: "string" as const },
+                amount: { type: "string" as const },
+                isPantry: { type: "boolean" as const }
             },
             required: ["name", "amount", "isPantry"]
-        },
-        nullable: true
+        }
     },
-    instructions: { type: Type.STRING, nullable: true },
-    tags: { type: Type.ARRAY, items: { type: Type.STRING, nullable: true }, nullable: true },
-    mealTime: { type: Type.STRING, nullable: true },
-    category: { type: Type.STRING, nullable: true },
-    englishSearchTerm: { type: Type.STRING, nullable: true }
+    instructions: { type: "string" as const },
+    tags: { type: "array" as const, items: { type: "string" as const } },
+    mealTime: { type: "string" as const },
+    category: { type: "string" as const },
+    englishSearchTerm: { type: "string" as const }
 };
 
 // Kompakte Sicht auf die vorhandene Sammlung für den Prompt
@@ -520,44 +516,42 @@ REGELN:
 7. "geteilt": Liste geteilter frischer Zutaten im Format ["Rahm: Mo + Mi", "Peperoni: Di + Do"].
 ${HALAL_RULE}`;
 
-        const aiResponse = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
-            contents: prompt,
-            config: {
-                safetySettings: [
-                    { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
-                    { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
-                    { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-                    { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE }
-                ],
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.OBJECT,
+        const aiMessage = await anthropic.messages.stream({
+            model: "claude-opus-4-8",
+            max_tokens: 16384,
+            thinking: { type: "adaptive" },
+            messages: [{ role: "user", content: prompt }],
+            tools: [{
+                name: "output_week_plan",
+                description: "Output the generated week meal plan as structured data",
+                input_schema: {
+                    type: "object" as const,
                     properties: {
                         plan: {
-                            type: Type.ARRAY,
+                            type: "array",
                             items: {
-                                type: Type.OBJECT,
+                                type: "object",
                                 properties: {
-                                    dayIndex: { type: Type.NUMBER },
-                                    mealType: { type: Type.STRING },
-                                    fromCollection: { type: Type.BOOLEAN },
-                                    recipeId: { type: Type.STRING, nullable: true },
-                                    ...recipeProps,
-                                    title: { type: Type.STRING, nullable: true }
+                                    dayIndex: { type: "number" },
+                                    mealType: { type: "string" },
+                                    fromCollection: { type: "boolean" },
+                                    recipeId: { type: "string" },
+                                    ...recipeProps
                                 },
                                 required: ["dayIndex", "mealType", "fromCollection"]
                             }
                         },
-                        einkaufsliste_anzahl: { type: Type.NUMBER, nullable: true },
-                        geteilt: { type: Type.ARRAY, items: { type: Type.STRING, nullable: true }, nullable: true }
+                        einkaufsliste_anzahl: { type: "number" },
+                        geteilt: { type: "array", items: { type: "string" } }
                     },
                     required: ["plan"]
                 }
-            }
-        });
+            }],
+            tool_choice: { type: "tool", name: "output_week_plan" }
+        }).finalMessage();
 
-        const data = JSON.parse(aiResponse.text || "{}");
+        const toolBlock = aiMessage.content.find(b => b.type === "tool_use");
+        const data: any = (toolBlock as any)?.input || {};
         const recipeById = new Map(existingRecipes.map((r: any) => [r.id, r]));
 
         const slots = (data.plan || []).map((entry: any) => {
@@ -617,28 +611,29 @@ Vermeide diese bereits geplanten Gerichte: ${(avoidTitles || []).join(", ") || "
 Antworte auf Deutsch. Wenn aus der Sammlung: fromCollection=true + recipeId. Sonst volle Rezeptdaten.
 ${HALAL_RULE}`;
 
-        const aiResponse = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
-            contents: prompt,
-            config: {
-                safetySettings: [
-                    { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE }
-                ],
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.OBJECT,
+        const aiMessage = await anthropic.messages.stream({
+            model: "claude-opus-4-8",
+            max_tokens: 4096,
+            thinking: { type: "adaptive" },
+            messages: [{ role: "user", content: prompt }],
+            tools: [{
+                name: "output_meal",
+                description: "Output the selected or generated meal as structured data",
+                input_schema: {
+                    type: "object" as const,
                     properties: {
-                        fromCollection: { type: Type.BOOLEAN },
-                        recipeId: { type: Type.STRING, nullable: true },
-                        ...recipeProps,
-                        title: { type: Type.STRING, nullable: true }
+                        fromCollection: { type: "boolean" },
+                        recipeId: { type: "string" },
+                        ...recipeProps
                     },
                     required: ["fromCollection"]
                 }
-            }
-        });
+            }],
+            tool_choice: { type: "tool", name: "output_meal" }
+        }).finalMessage();
 
-        const entry = JSON.parse(aiResponse.text || "{}");
+        const toolBlock = aiMessage.content.find(b => b.type === "tool_use");
+        const entry: any = (toolBlock as any)?.input || {};
         const recipeById = new Map(existingRecipes.map((r: any) => [r.id, r]));
 
         if (entry.fromCollection && entry.recipeId && recipeById.has(entry.recipeId)) {
