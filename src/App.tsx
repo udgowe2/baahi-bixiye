@@ -491,7 +491,7 @@ export default function App() {
             >
               <div className="flex items-center justify-between flex-wrap gap-3">
                 <h2 className="text-3xl font-serif font-bold text-gray-800 flex items-center gap-3">
-                  Wochenplan
+                  hamham
                   <Sparkles className="text-indigo-400" size={24} />
                 </h2>
                 <button
