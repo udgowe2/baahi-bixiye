@@ -49,6 +49,19 @@ export interface DailyTask {
   isSmartTask: boolean;
 }
 
+export interface WeekPlanSlot {
+  dayIndex: number;
+  mealType: MealType;
+  recipe: Recipe;
+  isNew: boolean;
+}
+
+export interface WeekPlanResult {
+  slots: WeekPlanSlot[];
+  count: number;
+  shared: string[];
+}
+
 export const DAYS = [
   "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"
 ];

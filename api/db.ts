@@ -145,6 +145,28 @@ export async function initDb() {
       )
     `);
 
+    // Schlüssel-Wert-Tabelle für App-Einstellungen (z.B. Vorratsliste, Themen-Tage)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS settings (
+        settingKey VARCHAR(100) PRIMARY KEY,
+        settingValue LONGTEXT
+      )
+    `);
+
+    // Standard-Vorratsliste einmalig anlegen (zählt nicht als Einkauf)
+    const defaultPantry = [
+      "Salz", "Pfeffer", "Öl", "Olivenöl", "Mehl", "Zucker", "Reis", "Nudeln",
+      "Wasser", "Essig", "Gewürze", "Knoblauch", "Zwiebeln", "Tomatenmark"
+    ];
+    await pool.query(
+      "INSERT IGNORE INTO settings (settingKey, settingValue) VALUES (?, ?)",
+      ["pantry", JSON.stringify(defaultPantry)]
+    );
+    await pool.query(
+      "INSERT IGNORE INTO settings (settingKey, settingValue) VALUES (?, ?)",
+      ["themeDays", JSON.stringify({})]
+    );
+
     console.log("MySQL Database initialized successfully");
   } catch (error) {
     console.error("Failed to initialize MySQL Database:", error);

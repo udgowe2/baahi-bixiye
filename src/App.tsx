@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Recipe, PlannerSlot, DAYS, MealType, ShoppingItem, MEAL_TYPES, DailyTask } from "./types";
+import { Recipe, PlannerSlot, DAYS, MealType, ShoppingItem, MEAL_TYPES, DailyTask, WeekPlanSlot } from "./types";
 import { getTodayDateString, getMonday, addDays, formatDateStr } from "./utils/date";
 import { generateSmartTasks } from "./utils/smartTasks";
 import { RecipeBank } from "./components/RecipeBank";
@@ -12,12 +12,12 @@ import { RecipeForm } from "./components/RecipeForm";
 import { RecipePickerModal } from "./components/RecipePickerModal";
 import { RecipeDetailsModal } from "./components/RecipeDetailsModal";
 import { TasksPage } from "./components/TasksPage";
-import { ChefHat, ShoppingBag, Calendar, Printer, Sparkles, Home, ListTodo, Moon, Sun } from "lucide-react";
+import { WeekPlannerModal } from "./components/WeekPlannerModal";
+import { SettingsModal } from "./components/SettingsModal";
+import { ChefHat, ShoppingBag, Calendar, Printer, Sparkles, Home, ListTodo, Package } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { useTheme } from "./context/ThemeContext";
 
 export default function App() {
-  const { isDark, toggleTheme } = useTheme();
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [planner, setPlanner] = useState<PlannerSlot[]>([]);
   const [shoppingItems, setShoppingItems] = useState<ShoppingItem[]>([]);
@@ -29,6 +29,8 @@ export default function App() {
   const [editingRecipe, setEditingRecipe] = useState<Recipe | null | "new">(null);
   const [activeTab, setActiveTab] = useState<"overview" | "planner" | "shopping" | "recipes" | "tasks">("overview");
   const [pickerTarget, setPickerTarget] = useState<{ dayIndex: number; mealType: MealType } | null>(null);
+  const [showWeekPlanner, setShowWeekPlanner] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   useEffect(() => {
     fetchRecipes();
@@ -321,6 +323,48 @@ export default function App() {
     setPickerTarget(null);
   };
 
+  const handleApplyWeekPlan = async (slots: WeekPlanSlot[]) => {
+    // 1. Neue Rezepte speichern (dedupliziert)
+    const newRecipes = slots.filter(s => s.isNew).map(s => s.recipe);
+    const uniqueNew = Array.from(new Map(newRecipes.map(r => [r.id, r])).values());
+    for (const r of uniqueNew) {
+      await fetch(`${API_BASE}/api/recipes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...r, createdAt: new Date().toISOString() }),
+      });
+    }
+
+    // 2. Slots nach Tag+Mahlzeit gruppieren
+    const grouped = new Map<string, { dayIndex: number; mealType: MealType; recipeIds: string[] }>();
+    for (const s of slots) {
+      const key = `${s.dayIndex}-${s.mealType}`;
+      const entry = grouped.get(key) || { dayIndex: s.dayIndex, mealType: s.mealType, recipeIds: [] };
+      entry.recipeIds.push(s.recipe.id);
+      grouped.set(key, entry);
+    }
+
+    // 3. Planer-Slots schreiben (vorhandenen Helfer erhalten)
+    for (const entry of grouped.values()) {
+      const targetDateStr = formatDateStr(addDays(currentWeekStart, entry.dayIndex));
+      const existing = planner.find(p => p.dateStr === targetDateStr && p.mealType === entry.mealType);
+      await fetch(`${API_BASE}/api/planner`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dayIndex: entry.dayIndex,
+          dateStr: targetDateStr,
+          mealType: entry.mealType,
+          recipeIds: entry.recipeIds,
+          helperName: existing?.helperName || "",
+        }),
+      });
+    }
+
+    await fetchRecipes();
+    await fetchPlanner(currentWeekStart);
+  };
+
   return (
     <div className="min-h-screen bg-[#FAFAFA] text-gray-800 font-sans selection:bg-indigo-100 selection:text-indigo-900">
       {/* Header */}
@@ -381,11 +425,11 @@ export default function App() {
 
           <div className="flex items-center gap-2">
             <button
-              onClick={toggleTheme}
+              onClick={() => setShowSettings(true)}
               className="flex items-center gap-2 p-2.5 bg-white border border-gray-200 text-gray-600 rounded-full hover:bg-gray-50 transition-all shadow-sm"
-              title={isDark ? "Light Mode" : "Dark Mode"}
+              title="Vorratskammer"
             >
-              {isDark ? <Sun size={18} /> : <Moon size={18} />}
+              <Package size={18} />
             </button>
             <button
               onClick={() => setShowPrintView(true)}
@@ -445,11 +489,18 @@ export default function App() {
               exit={{ opacity: 0, y: -20 }}
               className="flex flex-col gap-8"
             >
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between flex-wrap gap-3">
                 <h2 className="text-3xl font-serif font-bold text-gray-800 flex items-center gap-3">
                   Wochenplan
                   <Sparkles className="text-indigo-400" size={24} />
                 </h2>
+                <button
+                  onClick={() => setShowWeekPlanner(true)}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-full text-sm font-bold hover:bg-indigo-700 transition-all shadow-md shadow-indigo-200"
+                >
+                  <Sparkles size={18} />
+                  Woche planen
+                </button>
               </div>
 
               <div className="flex flex-col lg:flex-row gap-6 lg:gap-8">
@@ -550,6 +601,20 @@ export default function App() {
           recipes={recipes}
           onClose={() => setShowPrintView(false)}
         />
+      )}
+
+      {/* Wochen-Generator */}
+      {showWeekPlanner && (
+        <WeekPlannerModal
+          weekStart={currentWeekStart}
+          onApply={handleApplyWeekPlan}
+          onClose={() => setShowWeekPlanner(false)}
+        />
+      )}
+
+      {/* Vorratskammer-Einstellungen */}
+      {showSettings && (
+        <SettingsModal onClose={() => setShowSettings(false)} />
       )}
       {/* Mobile Bottom Navigation */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white/90 backdrop-blur-md border-t border-gray-200 px-6 py-3 pb-safe shadow-[0_-4px_20px_-10px_rgba(0,0,0,0.1)] print:hidden">

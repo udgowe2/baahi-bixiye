@@ -46,6 +46,44 @@ if (!process.env.GEMINI_API_KEY) {
 }
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 
+// --- Settings (Vorratsliste, Themen-Tage) ---
+
+apiRouter.get("/settings", async (req, res) => {
+    try {
+        const [rows]: any = await pool.query("SELECT settingKey, settingValue FROM settings");
+        const settings: Record<string, any> = {};
+        for (const row of rows) {
+            settings[row.settingKey] = safeParse(row.settingValue, null);
+        }
+        res.json(settings);
+    } catch (error) {
+        res.status(500).json({ error: "Database error" });
+    }
+});
+
+apiRouter.post("/settings", async (req, res) => {
+    try {
+        const { key, value } = req.body;
+        if (!key) return res.status(400).json({ error: "key is required" });
+        await pool.query(
+            "REPLACE INTO settings (settingKey, settingValue) VALUES (?, ?)",
+            [key, JSON.stringify(value)]
+        );
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: "Database error" });
+    }
+});
+
+async function getPantry(): Promise<string[]> {
+    try {
+        const [rows]: any = await pool.query("SELECT settingValue FROM settings WHERE settingKey = 'pantry'");
+        return rows.length ? safeParse<string[]>(rows[0].settingValue, []) : [];
+    } catch {
+        return [];
+    }
+}
+
 // Get all recipes
 apiRouter.get("/recipes", async (req, res) => {
     try {
@@ -373,5 +411,253 @@ Rules:
     } catch (error: any) {
         console.error("Generation error:", error);
         res.status(500).json({ error: "Failed to generate recipe: " + error.message });
+    }
+});
+
+// --- Wochen-Generator mit Einkaufs-Optimierung ---
+
+const DAY_NAMES = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"];
+const MEAL_LABELS: Record<string, string> = { lunch: "Mittagessen", dinner: "Abendessen" };
+
+const HALAL_RULE = "🚫 STRIKTE HALAL-REGELN: Niemals Alkohol, Schweinefleisch, Schmalz oder andere haram Zutaten. Alles Fleisch muss halal sein.";
+
+// Einheitliches Antwort-Schema für ein generiertes Gericht
+const recipeProps = {
+    title: { type: Type.STRING },
+    prepTime: { type: Type.STRING, nullable: true },
+    ingredients: {
+        type: Type.ARRAY,
+        items: {
+            type: Type.OBJECT,
+            properties: {
+                name: { type: Type.STRING, nullable: true },
+                amount: { type: Type.STRING, nullable: true },
+                isPantry: { type: Type.BOOLEAN, nullable: true }
+            },
+            required: ["name", "amount", "isPantry"]
+        },
+        nullable: true
+    },
+    instructions: { type: Type.STRING, nullable: true },
+    tags: { type: Type.ARRAY, items: { type: Type.STRING, nullable: true }, nullable: true },
+    mealTime: { type: Type.STRING, nullable: true },
+    category: { type: Type.STRING, nullable: true },
+    englishSearchTerm: { type: Type.STRING, nullable: true }
+};
+
+// Kompakte Sicht auf die vorhandene Sammlung für den Prompt
+function recipeContext(recipes: any[]): string {
+    return recipes.map(r => {
+        const ings = (r.ingredients || []).map((i: any) => i.name).filter(Boolean).join(", ");
+        return `- id:"${r.id}" | ${r.title} | ${r.mealTime || "?"} | Zutaten: ${ings}`;
+    }).join("\n");
+}
+
+// Anzahl verschiedener einzukaufender Produkte (ohne Vorrat) server-seitig berechnen
+function computeShoppingCount(recipes: any[], pantry: string[]): number {
+    const pantryLower = new Set(pantry.map(p => p.toLowerCase().trim()));
+    const products = new Set<string>();
+    for (const r of recipes) {
+        for (const ing of (r.ingredients || [])) {
+            const name = (ing?.name || "").toLowerCase().trim();
+            if (!name || ing?.isPantry || pantryLower.has(name)) continue;
+            products.add(name);
+        }
+    }
+    return products.size;
+}
+
+apiRouter.post("/generate-week", async (req, res) => {
+    try {
+        const { meals = ["dinner"], variety = 50, themeDays = {} } = req.body;
+        const mealList: string[] = Array.isArray(meals) && meals.length ? meals : ["dinner"];
+
+        const [recipeRows]: any = await pool.query("SELECT * FROM recipes");
+        const existingRecipes = recipeRows.map((r: any) => ({
+            ...r,
+            ingredients: safeParse(r.ingredients, []),
+            tags: safeParse(r.tags, [])
+        }));
+        const pantry = await getPantry();
+
+        const slotsList: string[] = [];
+        for (let day = 0; day < 7; day++) {
+            for (const meal of mealList) {
+                const theme = themeDays?.[String(day)] ? ` (Themen-Tag: ${themeDays[String(day)]})` : "";
+                slotsList.push(`Tag ${day} (${DAY_NAMES[day]}) – ${MEAL_LABELS[meal] || meal}${theme}`);
+            }
+        }
+
+        // variety: 0 = möglichst sparsam einkaufen, 100 = maximale Abwechslung
+        const varietyHint = variety <= 33
+            ? "PRIORITÄT: möglichst WENIGE verschiedene Produkte. Lass Zutaten sich stark überschneiden, plane Gerichte mit geteilten frischen Zutaten nahe beieinander."
+            : variety >= 67
+                ? "PRIORITÄT: maximale ABWECHSLUNG. Vermeide Wiederholungen, biete kulinarische Vielfalt."
+                : "PRIORITÄT: ausgewogen zwischen Abwechslung und sparsamem Einkauf.";
+
+        const prompt = `Du bist Familien-Koch und planst einen Wochenplan für eine muslimische Familie.
+
+ZU FÜLLENDE SLOTS:
+${slotsList.join("\n")}
+
+VORHANDENE REZEPTSAMMLUNG (bevorzugt verwenden! Referenziere per id, erfinde nur Neues für Lücken):
+${existingRecipes.length ? recipeContext(existingRecipes) : "(noch keine Rezepte vorhanden – alles neu erfinden)"}
+
+GRUNDVORRAT (immer vorhanden, NICHT als Einkauf zählen, darf großzügig verwendet werden):
+${pantry.join(", ")}
+
+EINKAUFS-OPTIMIERUNG:
+${varietyHint}
+Frische Zutaten (Rahm, Kräuter, Salat) sollen vollständig aufgebraucht werden – plane Gerichte, die sie teilen, nahe beieinander.
+
+REGELN:
+1. Für jeden Slot genau einen Eintrag in "plan".
+2. Wenn ein passendes Rezept aus der Sammlung kommt: fromCollection=true und die exakte recipeId angeben (KEINE neuen Felder nötig).
+3. Wenn neu erfunden: fromCollection=false, volle Rezeptdaten (title, ingredients mit isPantry, instructions als Markdown mit nummerierten Schritten, tags, mealTime, category).
+4. category ist "komplett", "gemuese", "fleisch" oder "staerke". mealTime passend zum Slot ("lunch"/"dinner").
+5. Antworte auf Deutsch (außer englishSearchTerm).
+6. "einkaufsliste_anzahl": Zahl der verschiedenen einzukaufenden Produkte (ohne Grundvorrat).
+7. "geteilt": Liste geteilter frischer Zutaten im Format ["Rahm: Mo + Mi", "Peperoni: Di + Do"].
+${HALAL_RULE}`;
+
+        const aiResponse = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: {
+                safetySettings: [
+                    { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+                    { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+                    { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+                    { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE }
+                ],
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        plan: {
+                            type: Type.ARRAY,
+                            items: {
+                                type: Type.OBJECT,
+                                properties: {
+                                    dayIndex: { type: Type.NUMBER },
+                                    mealType: { type: Type.STRING },
+                                    fromCollection: { type: Type.BOOLEAN },
+                                    recipeId: { type: Type.STRING, nullable: true },
+                                    ...recipeProps,
+                                    title: { type: Type.STRING, nullable: true }
+                                },
+                                required: ["dayIndex", "mealType", "fromCollection"]
+                            }
+                        },
+                        einkaufsliste_anzahl: { type: Type.NUMBER, nullable: true },
+                        geteilt: { type: Type.ARRAY, items: { type: Type.STRING, nullable: true }, nullable: true }
+                    },
+                    required: ["plan"]
+                }
+            }
+        });
+
+        const data = JSON.parse(aiResponse.text || "{}");
+        const recipeById = new Map(existingRecipes.map((r: any) => [r.id, r]));
+
+        const slots = (data.plan || []).map((entry: any) => {
+            if (entry.fromCollection && entry.recipeId && recipeById.has(entry.recipeId)) {
+                return { dayIndex: entry.dayIndex, mealType: entry.mealType, recipe: recipeById.get(entry.recipeId), isNew: false };
+            }
+            // Neu erfundenes Rezept als Rezept-Objekt aufbereiten
+            const recipe = {
+                id: `ai-week-${Math.random().toString(36).substring(2, 11)}`,
+                title: entry.title || "Neues Gericht",
+                image: null,
+                prepTime: entry.prepTime || "",
+                mealTime: entry.mealType,
+                category: entry.category || null,
+                ingredients: entry.ingredients || [],
+                instructions: entry.instructions || "",
+                tags: entry.tags || []
+            };
+            return { dayIndex: entry.dayIndex, mealType: entry.mealType, recipe, isNew: true };
+        });
+
+        const chosenRecipes = slots.map((s: any) => s.recipe);
+        const count = computeShoppingCount(chosenRecipes, pantry);
+
+        res.json({
+            slots,
+            count,
+            shared: Array.isArray(data.geteilt) ? data.geteilt.filter(Boolean) : []
+        });
+    } catch (error: any) {
+        console.error("Week generation error:", error);
+        res.status(500).json({ error: "Wochenplan konnte nicht erstellt werden: " + error.message });
+    }
+});
+
+// Einen einzelnen Slot neu würfeln (Reroll), bestehende Titel vermeiden
+apiRouter.post("/generate-day", async (req, res) => {
+    try {
+        const { mealType = "dinner", avoidTitles = [] } = req.body;
+
+        const [recipeRows]: any = await pool.query("SELECT * FROM recipes");
+        const existingRecipes = recipeRows.map((r: any) => ({
+            ...r,
+            ingredients: safeParse(r.ingredients, []),
+            tags: safeParse(r.tags, [])
+        }));
+        const pantry = await getPantry();
+
+        const prompt = `Schlage EIN ${MEAL_LABELS[mealType] || mealType} für eine muslimische Familie vor.
+
+VORHANDENE SAMMLUNG (bevorzugen, per id referenzieren wenn passend):
+${existingRecipes.length ? recipeContext(existingRecipes) : "(keine vorhanden)"}
+
+GRUNDVORRAT (nicht einkaufen): ${pantry.join(", ")}
+
+Vermeide diese bereits geplanten Gerichte: ${(avoidTitles || []).join(", ") || "(keine)"}.
+Antworte auf Deutsch. Wenn aus der Sammlung: fromCollection=true + recipeId. Sonst volle Rezeptdaten.
+${HALAL_RULE}`;
+
+        const aiResponse = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: {
+                safetySettings: [
+                    { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE }
+                ],
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        fromCollection: { type: Type.BOOLEAN },
+                        recipeId: { type: Type.STRING, nullable: true },
+                        ...recipeProps,
+                        title: { type: Type.STRING, nullable: true }
+                    },
+                    required: ["fromCollection"]
+                }
+            }
+        });
+
+        const entry = JSON.parse(aiResponse.text || "{}");
+        const recipeById = new Map(existingRecipes.map((r: any) => [r.id, r]));
+
+        if (entry.fromCollection && entry.recipeId && recipeById.has(entry.recipeId)) {
+            return res.json({ recipe: recipeById.get(entry.recipeId), isNew: false });
+        }
+        const recipe = {
+            id: `ai-week-${Math.random().toString(36).substring(2, 11)}`,
+            title: entry.title || "Neues Gericht",
+            image: null,
+            prepTime: entry.prepTime || "",
+            mealTime: mealType,
+            category: entry.category || null,
+            ingredients: entry.ingredients || [],
+            instructions: entry.instructions || "",
+            tags: entry.tags || []
+        };
+        res.json({ recipe, isNew: true });
+    } catch (error: any) {
+        console.error("Day generation error:", error);
+        res.status(500).json({ error: "Gericht konnte nicht erstellt werden: " + error.message });
     }
 });
