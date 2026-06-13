@@ -1,20 +1,40 @@
 services:
   app:
-    image: ghcr.io/udgowe2/baahi-bixiye:latest
+    build: .
+    image: baahi-bixiye:latest
     container_name: baahi-app
     restart: unless-stopped
     ports:
       - "8095:3001"
     environment:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      DB_HOST: 192.168.1.30
-      DB_PORT: "3447"
+      DB_HOST: db
+      DB_PORT: "3306"
       DB_USER: root
       DB_PASSWORD: ${DB_PASSWORD}
       DB_NAME: Baahi
       UPLOAD_DIR: /data/uploads
     volumes:
       - uploads:/data/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: mariadb:11
+    container_name: baahi-db
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: ${DB_PASSWORD}
+      MARIADB_DATABASE: Baahi
+    volumes:
+      - dbdata:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
 
 volumes:
   uploads:
+  dbdata:
