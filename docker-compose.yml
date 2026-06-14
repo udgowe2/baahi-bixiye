@@ -5,7 +5,7 @@ services:
     container_name: baahi-app
     restart: unless-stopped
     ports:
-      - "8095:3001"
+      - "8051:3001"
     environment:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       DB_HOST: db
